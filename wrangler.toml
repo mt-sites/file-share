@@ -1,0 +1,14 @@
+name = "file-share"
+main = "src/worker.js"
+compatibility_date = "2025-01-01"
+
+[assets]
+directory = "./public"
+run_worker_first = ["/api/*"]
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "file-share"
+
+[vars]
+MAX_BYTES = "5368709120"   # 5 GB total cap

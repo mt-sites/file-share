@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shared Files</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b2430;--mut:#6b7686;--bd:#e2e6ec;--ac:#2563eb;--dg:#c0392b}
+@media(prefers-color-scheme:dark){:root{--bg:#12161c;--card:#1b222b;--tx:#e8edf3;--mut:#93a0b1;--bd:#2b3441;--ac:#4f8cff;--dg:#ff7b6b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:28px 16px 48px}
+h1{margin:0 0 4px;font-size:26px}.sub{color:var(--mut);margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.item{display:flex;align-items:center;gap:12px}.info{flex:1;min-width:0}
+.nm{font-weight:600;overflow-wrap:anywhere}.meta,.msg{font-size:13px;color:var(--mut)}
+a.btn,button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:9px 16px;background:var(--ac);color:#fff;font-weight:600;text-decoration:none;display:inline-block}
+button.ghost{background:none;color:var(--dg);padding:6px 10px;font-weight:500}
+.bar{height:8px;background:var(--bd);border-radius:6px;overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;background:var(--ac)}
+.prog{height:6px;background:var(--bd);border-radius:6px;overflow:hidden;margin-top:6px}.prog i{display:block;height:100%;width:0;background:var(--ac)}
+input[type=password]{font:inherit;padding:9px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx)}
+.empty{text-align:center;color:var(--mut);padding:30px 0}.err{color:var(--dg)}
+.search{width:100%;font:inherit;padding:11px 14px;margin-bottom:14px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx)}
+.link{background:none;color:var(--mut);padding:0;font-weight:400;font-size:13px;text-decoration:underline}
+</style>
+</head>
+<body>
+<main>
+<h1>Shared Files</h1>
+<p class="sub">Tap Download to save a file to your device.</p>
+<div id="admin" class="card" hidden>
+  <input id="pick" type="file" multiple hidden>
+  <button id="pickBtn">Upload files</button>
+  <div id="ups"></div>
+  <div class="meta" id="space"></div><div class="bar"><i id="barfill" style="width:0"></i></div>
+</div>
+<input id="q" class="search" type="search" placeholder="Search files…" autocomplete="off">
+<div id="list"><div class="empty">Loading…</div></div>
+<p><button class="link" id="login">Owner login</button></p>
+</main>
+<script>
+const $=i=>document.getElementById(i);
+let pw=sessionStorage.getItem("pw")||"";
+const CHUNK=20*1024*1024;
+const fmt=b=>b>=1073741824?(b/1073741824).toFixed(2)+" GB":b>=1048576?(b/1048576).toFixed(1)+" MB":Math.max(1,Math.round(b/1024))+" KB";
+const H=()=>({"x-admin-password":pw});
+
+let FILES=[],USED=0,MAX=1;
+async function load(){
+  const r=await (await fetch("/api/files")).json();
+  FILES=r.files;USED=r.used;MAX=r.max;render();
+}
+function render(){
+  const q=$("q").value.trim().toLowerCase();
+  const list=q?FILES.filter(f=>f.key.toLowerCase().includes(q)):FILES;
+  const L=$("list");L.textContent="";
+  if(!list.length){L.innerHTML='<div class="empty">'+(q?"No files match your search.":"No files shared yet.")+'</div>'}
+  for(const f of list){
+    const c=document.createElement("div");c.className="card item";
+    const i=document.createElement("div");i.className="info";
+    const n=document.createElement("div");n.className="nm";n.textContent=f.key;
+    const m=document.createElement("div");m.className="meta";m.textContent=fmt(f.size)+" · "+new Date(f.uploaded).toLocaleDateString();
+    i.append(n,m);
+    const a=document.createElement("a");a.className="btn";a.textContent="Download";
+    a.href="/api/download?key="+encodeURIComponent(f.key);
+    c.append(i,a);
+    if(pw){const d=document.createElement("button");d.className="ghost";d.textContent="Delete";
+      d.onclick=async()=>{if(confirm("Delete "+f.key+"?")){await fetch("/api/delete?key="+encodeURIComponent(f.key),{method:"DELETE",headers:H()});load()}};c.append(d)}
+    L.append(c);
+  }
+  $("space").textContent=fmt(USED)+" of "+fmt(MAX)+" used";
+  $("barfill").style.width=Math.min(100,USED/MAX*100)+"%";
+}
+$("q").addEventListener("input",render);
+
+async function upload(file){
+  const row=document.createElement("div");row.className="msg";
+  row.innerHTML='<span></span><div class="prog"><i></i></div>';
+  const label=row.firstChild,fill=row.querySelector("i");
+  $("ups").append(row);label.textContent=file.name+": starting…";
+  const cr=await fetch("/api/mpu/create",{method:"POST",headers:H(),body:JSON.stringify({name:file.name,size:file.size,type:file.type})});
+  const c=await cr.json();
+  if(!cr.ok){label.textContent=file.name+": "+c.error;label.className="err";return}
+  const parts=[];let n=0;
+  try{
+    for(let o=0;o<file.size;o+=CHUNK){
+      n++;
+      const pr=await fetch(`/api/mpu/part?key=${encodeURIComponent(c.key)}&uploadId=${c.uploadId}&n=${n}`,{method:"PUT",headers:H(),body:file.slice(o,o+CHUNK)});
+      if(!pr.ok)throw new Error("part failed");
+      parts.push(await pr.json());
+      const pct=Math.min(100,(o+CHUNK)/file.size*100);fill.style.width=pct+"%";label.textContent=file.name+": "+Math.round(pct)+"%";
+    }
+    await fetch(`/api/mpu/complete?key=${encodeURIComponent(c.key)}&uploadId=${c.uploadId}`,{method:"POST",headers:H(),body:JSON.stringify({parts})});
+    label.textContent=file.name+": done";
+  }catch(e){
+    await fetch(`/api/mpu/abort?key=${encodeURIComponent(c.key)}&uploadId=${c.uploadId}`,{method:"POST",headers:H()});
+    label.textContent=file.name+": upload failed";label.className="err";
+  }
+}
+
+$("login").onclick=async()=>{
+  const p=prompt("Owner password");if(!p)return;
+  const r=await fetch("/api/check",{headers:{"x-admin-password":p}});
+  if(!r.ok){alert("Wrong password");return}
+  pw=p;sessionStorage.setItem("pw",p);$("admin").hidden=false;$("login").hidden=true;load();
+};
+$("pickBtn").onclick=()=>$("pick").click();
+$("pick").onchange=async e=>{for(const f of e.target.files)await upload(f);e.target.value="";load()};
+(async()=>{
+  if(pw){const r=await fetch("/api/check",{headers:H()});
+    if(r.ok){$("admin").hidden=false;$("login").hidden=true}else{pw="";sessionStorage.removeItem("pw")}}
+  load();
+})();
+</script>
+</body>
+</html>
