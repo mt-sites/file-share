@@ -12,4 +12,4 @@ binding = "BUCKET"
 bucket_name = "file-share"
 
 [vars]
-MAX_BYTES = "5368709120"   # 5 GB total cap
+MAX_BYTES = "10000000000"   # 10 GB total cap
