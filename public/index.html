@@ -101,7 +101,7 @@ async function upload(file){
 $("login").onclick=async()=>{
   const p=prompt("Owner password");if(!p)return;
   const r=await fetch("/api/check",{headers:{"x-admin-password":p}});
-  if(!r.ok){alert("Wrong password");return}
+  if(!r.ok){let m="Wrong password";try{m=(await r.json()).error||m}catch(e){}alert(m);return}
   pw=p;sessionStorage.setItem("pw",p);$("admin").hidden=false;$("login").hidden=true;load();
 };
 $("pickBtn").onclick=()=>$("pick").click();

@@ -49,6 +49,7 @@ export default {
 
     // ---- Owner only ----
     if (path.startsWith("/api/")) {
+      if (!env.ADMIN_PASSWORD) return json({ error: "ADMIN_PASSWORD is not set on this Worker. Add it as a Secret in Settings > Variables and Secrets, then redeploy." }, 500);
       if (!isAdmin(req, env)) return json({ error: "Wrong password" }, 401);
 
       if (path === "/api/check") return json({ ok: true });
